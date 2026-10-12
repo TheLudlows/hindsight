@@ -16,7 +16,6 @@ import httpx
 import pytest
 from hindsight_client import Hindsight
 from hindsight_client_api import ApiClient, Configuration
-
 from hindsight_system_tests import start_hindsight_server, wait_until_settled
 from hindsight_system_tests.payloads import consolidation, extracted, fact
 
