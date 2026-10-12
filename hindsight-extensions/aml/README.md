@@ -6,6 +6,10 @@ Submit `/health` as the unauthenticated health URL. AML receives memory evidence
 its platform owns answer generation and scoring. This is independent of the AMB
 quality harness in `hindsight-system-evals/`.
 
+For the MemoHarbor commercial Textual submission, see the
+[Chinese submission preparation checklist](SUBMISSION_PREPARATION.zh-CN.md)
+for required materials, deployment readiness, and evaluation steps.
+
 ## Enable
 
 Use a build containing this extension, including the API and a running worker.
