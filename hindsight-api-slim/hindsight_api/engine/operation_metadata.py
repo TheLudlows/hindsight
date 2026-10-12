@@ -30,12 +30,16 @@ class BatchRetainParentMetadata:
     # documents UI cross-checks this to badge rows as "updating". Multi-document
     # batches leave it None and are matched per single-document child instead.
     document_id: str | None = None
+    # Optional caller-defined digest of the logical request, checked on replays.
+    request_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for JSON serialization, omitting document_id when unset."""
         data = asdict(self)
         if data.get("document_id") is None:
             data.pop("document_id", None)
+        if data.get("request_fingerprint") is None:
+            data.pop("request_fingerprint", None)
         return data
 
 

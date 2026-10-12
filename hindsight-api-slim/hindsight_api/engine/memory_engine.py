@@ -22319,7 +22319,9 @@ class MemoryEngine(MemoryEngineInterface):
             "operation_id": str(operation_id),
         }
 
-    async def _resolve_retain_replay(self, operation_id: uuid.UUID, bank_id: str) -> dict[str, Any] | None:
+    async def _resolve_retain_replay(
+        self, operation_id: uuid.UUID, bank_id: str, request_fingerprint: str | None = None
+    ) -> dict[str, Any] | None:
         """Resolve a caller-supplied async retain operation_id to a prior submission.
 
         Returns the replay response when the id is this bank's own batch_retain
@@ -22345,6 +22347,10 @@ class MemoryEngine(MemoryEngineInterface):
         metadata = row["result_metadata"]
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
+        # Opt-in strict replay semantics for callers that bind an id to a body.
+        # Compare inside both replay paths, including the parent INSERT race.
+        if request_fingerprint is not None and (metadata or {}).get("request_fingerprint") != request_fingerprint:
+            raise RetainOperationConflictError(f"operation_id {operation_id} was submitted with a different request")
         items_count = int(metadata.get("items_count", 0)) if metadata else 0
         return {"operation_id": str(operation_id), "items_count": items_count}
 
@@ -22357,6 +22363,7 @@ class MemoryEngine(MemoryEngineInterface):
         document_tags: list[str] | None = None,
         strategy: str | None = None,
         operation_id: str | None = None,
+        request_fingerprint: str | None = None,
         ingress_attachments: "Mapping[str, Sequence[str]] | None" = None,
     ) -> dict[str, Any]:
         """Submit a batch retain operation to run asynchronously.
@@ -22369,7 +22376,13 @@ class MemoryEngine(MemoryEngineInterface):
         operation and creates no new work, so a client that retries after a lost
         acknowledgement does not enqueue a duplicate. The parent primary key is
         the concurrency authority; no extra bookkeeping columns are needed.
+
+        ``request_fingerprint`` optionally binds that identity to a logical body.
+        A replay with a different fingerprint raises RetainOperationConflictError.
+        The digest is caller-defined and stored in the existing parent metadata.
         """
+        if request_fingerprint is not None and (not request_fingerprint or operation_id is None):
+            raise ValueError("request_fingerprint requires a non-empty fingerprint and operation_id")
         await self._authenticate_tenant(request_context)
 
         # Run operation validator (bank access, credits, etc.) before queuing.
@@ -22430,7 +22443,7 @@ class MemoryEngine(MemoryEngineInterface):
         # cheap short-circuit for the common sequential-retry case.
         client_operation_id: uuid.UUID | None = uuid.UUID(operation_id) if operation_id is not None else None
         if client_operation_id is not None:
-            replay = await self._resolve_retain_replay(client_operation_id, bank_id)
+            replay = await self._resolve_retain_replay(client_operation_id, bank_id, request_fingerprint)
             if replay is not None:
                 return replay
 
@@ -22496,6 +22509,7 @@ class MemoryEngine(MemoryEngineInterface):
             total_tokens=total_tokens,
             num_sub_batches=len(sub_batches),
             document_id=doc_ids[0] if len(doc_ids) == 1 else None,
+            request_fingerprint=request_fingerprint,
         )
 
         # Persist the parent row and all child rows in a single transaction.
@@ -22618,7 +22632,7 @@ class MemoryEngine(MemoryEngineInterface):
             ) or _is_oracledb_integrity_error(e)
             if client_operation_id is None or not is_unique_violation:
                 raise
-            replay = await self._resolve_retain_replay(client_operation_id, bank_id)
+            replay = await self._resolve_retain_replay(client_operation_id, bank_id, request_fingerprint)
             if replay is not None:
                 return replay
             raise

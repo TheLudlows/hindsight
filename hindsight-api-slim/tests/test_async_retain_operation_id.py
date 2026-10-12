@@ -173,6 +173,53 @@ async def test_concurrent_submissions_with_same_id_create_one_operation(memory, 
 
 
 @pytest.mark.asyncio
+async def test_fingerprinted_replay_rejects_changed_body(memory, request_context):
+    operation_id = str(uuid.uuid4())
+    contents = [{"content": "original", "document_id": "doc1"}]
+    first = await memory.submit_async_retain(
+        bank_id="test_retain_fingerprint",
+        contents=contents,
+        request_context=request_context,
+        operation_id=operation_id,
+        request_fingerprint="body-a",
+    )
+    replay = await memory.submit_async_retain(
+        bank_id="test_retain_fingerprint",
+        contents=contents,
+        request_context=request_context,
+        operation_id=operation_id,
+        request_fingerprint="body-a",
+    )
+    assert replay["operation_id"] == first["operation_id"]
+    with pytest.raises(RetainOperationConflictError):
+        await memory.submit_async_retain(
+            bank_id="test_retain_fingerprint",
+            contents=contents,
+            request_context=request_context,
+            operation_id=operation_id,
+            request_fingerprint="body-b",
+        )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_different_fingerprints_have_one_winner(memory, request_context):
+    operation_id = str(uuid.uuid4())
+
+    async def submit(fingerprint):
+        return await memory.submit_async_retain(
+            bank_id="test_retain_fingerprint_race",
+            contents=[{"content": fingerprint, "document_id": "doc1"}],
+            request_context=request_context,
+            operation_id=operation_id,
+            request_fingerprint=fingerprint,
+        )
+
+    outcomes = await asyncio.gather(submit("body-a"), submit("body-b"), return_exceptions=True)
+    assert sum(isinstance(result, RetainOperationConflictError) for result in outcomes) == 1
+    assert sum(isinstance(result, dict) for result in outcomes) == 1
+
+
+@pytest.mark.asyncio
 async def test_http_invalid_operation_id_is_rejected(api_client):
     bank_id = "test_retain_idem_http_invalid"
     response = await api_client.post(
