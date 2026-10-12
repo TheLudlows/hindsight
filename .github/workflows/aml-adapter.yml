@@ -10,6 +10,7 @@ on:
       - 'hindsight-system-tests/tests/test_75_aml_adapter.py'
       - 'hindsight-extensions/aml/**'
       - '.github/workflows/aml-adapter.yml'
+      - '.github/workflows/test.yml'
   push:
     branches: [main, 'feat/aml-*']
     paths:
@@ -17,6 +18,7 @@ on:
       - 'hindsight-system-tests/**'
       - 'hindsight-extensions/aml/**'
       - '.github/workflows/aml-adapter.yml'
+      - '.github/workflows/test.yml'
 
 permissions:
   contents: read

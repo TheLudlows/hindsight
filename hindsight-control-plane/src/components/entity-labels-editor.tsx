@@ -157,9 +157,9 @@ function MapFieldsEditor({
               />
               <Select
                 value={field.type}
-                onValueChange={(v: MapField["type"]) =>
+                onValueChange={(v) =>
                   updateField(fieldName, {
-                    type: v,
+                    type: v as MapField["type"],
                     ...(v === "map" ? { fields: field.fields ?? {}, values: undefined } : {}),
                     ...(v === "text" || v === "multi-text"
                       ? { fields: undefined, values: undefined }

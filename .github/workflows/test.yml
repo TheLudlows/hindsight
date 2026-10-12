@@ -90,11 +90,17 @@ jobs:
       integrations-roo-code: ${{ steps.filter.outputs.integrations-roo-code }}
       dev: ${{ steps.filter.outputs.dev }}
       ci: ${{ steps.filter.outputs.ci }}
-      # Secrets are available for internal PRs and workflow_dispatch.
-      # Fork PRs via pull_request event do NOT have access to secrets.
-      has_secrets: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # Same-repository PRs can still run in a fork with no provider secrets.
+      # The live suites require Vertex AI credentials to start their API server.
+      has_secrets: ${{ steps.credentials.outputs.has_secrets }}
     steps:
     - uses: actions/checkout@v6
+
+    - name: Detect live-test credentials
+      id: credentials
+      env:
+        HAS_SECRETS: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.GCP_VERTEXAI_CREDENTIALS != '' }}
+      run: echo "has_secrets=$HAS_SECRETS" >> "$GITHUB_OUTPUT"
 
     - uses: dorny/paths-filter@v4
       id: filter
@@ -1778,7 +1784,6 @@ jobs:
   build-docker-images:
     needs: [detect-changes]
     if: >-
-      needs.detect-changes.outputs.has_secrets == 'true' &&
       (github.event_name == 'workflow_dispatch' ||
       needs.detect-changes.outputs.core == 'true' ||
       needs.detect-changes.outputs.docker == 'true' ||
@@ -1859,18 +1864,17 @@ jobs:
         # causing buildx to fail with "failed to parse error response 502"
         # Build will be slower but more reliable
 
-    # Slim variants require external embedding providers; cp-only needs no
-    # credentials at all, so the credential step stays gated on the variant
-    # while the smoke test itself is gated on `smoke`.
+    # Build every image even without provider secrets. Only API smoke tests
+    # need live providers; the control-plane smoke test remains credential-free.
     - name: Setup GCP credentials for smoke test
-      if: matrix.variant == 'slim' && matrix.smoke
+      if: matrix.variant == 'slim' && matrix.smoke && needs.detect-changes.outputs.has_secrets == 'true'
       run: |
         printf '%s' '${{ secrets.GCP_VERTEXAI_CREDENTIALS }}' > /tmp/gcp-credentials.json
         PROJECT_ID=$(jq -r '.project_id' /tmp/gcp-credentials.json)
         echo "HINDSIGHT_API_LLM_VERTEXAI_PROJECT_ID=$PROJECT_ID" >> $GITHUB_ENV
 
     - name: Smoke test - verify container starts
-      if: matrix.smoke
+      if: matrix.smoke && (matrix.target == 'cp-only' || needs.detect-changes.outputs.has_secrets == 'true')
       env:
         HINDSIGHT_API_LLM_PROVIDER: vertexai
         HINDSIGHT_API_LLM_MODEL: google/gemini-2.5-flash-lite
