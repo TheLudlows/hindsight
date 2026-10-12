@@ -164,6 +164,20 @@ async def test_empty_search_is_a_data_object(engine):
 
 
 @pytest.mark.asyncio
+async def test_missing_bank_is_an_empty_aml_search(engine):
+    engine.recall_async.side_effect = OperationValidationError("Bank not found", status_code=404)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=make_app(engine)), base_url="http://test") as client:
+        response = await client.post(
+            "/ext/aml/search",
+            json={"user_id": "unknown", "query": "q", "top_k": 100},
+            headers={"X-Api-Key": "secret"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"data": []}
+    engine.submit_async_retain.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"X-Api-Key": "wrong"}])
 async def test_authentication_precedes_engine_access(engine, headers):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=make_app(engine)), base_url="http://test") as client:

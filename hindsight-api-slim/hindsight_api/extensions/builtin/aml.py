@@ -274,13 +274,21 @@ class AmlHttpExtension(HttpExtension):
             body: AmlSearchRequest, request: Request, context: RequestContext = Depends(authenticate)
         ) -> AmlSearchResponse:
             async with engine_call(request, "recall"):
-                result = await memory.recall_async(
-                    bank_id=aml_bank_id(settings.aml_namespace, body.user_id),
-                    query=body.query,
-                    budget=settings.aml_search_budget,
-                    max_tokens=settings.aml_search_max_tokens,
-                    request_context=context,
-                )
+                try:
+                    result = await memory.recall_async(
+                        bank_id=aml_bank_id(settings.aml_namespace, body.user_id),
+                        query=body.query,
+                        budget=settings.aml_search_budget,
+                        max_tokens=settings.aml_search_max_tokens,
+                        request_context=context,
+                    )
+                except OperationValidationError as exc:
+                    # A user with no Add has no Bank. Preserve the engine's
+                    # auth/read checks, then translate an absent scope to AML's
+                    # empty result (without creating a Bank during a read).
+                    if exc.status_code == 404:
+                        return AmlSearchResponse(data=[])
+                    raise
             # Options are accepted but do not become an answer-generation prompt.
             # Use native ranking, not a guessed score, and bound the final list.
             return AmlSearchResponse(
