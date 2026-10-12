@@ -49,7 +49,7 @@ async def test_aml_chunks_replay_scope_and_restart(stub_server, llm, tmp_path):
     )
     llm.on_step("consolidate").returns(consolidation())
     namespace = "systest-aml-" + uuid.uuid4().hex
-    users = ["alice", "bob"]
+    users = ["alice", "bob", "race"]
     # This is the documented public mapping, not an engine/internal helper.
     banks = [
         "aml-"
@@ -99,8 +99,18 @@ async def test_aml_chunks_replay_scope_and_restart(stub_server, llm, tmp_path):
             assert (await aml.post("/ext/aml/add", json=chunk2)).status_code == 200
             bob = {**alice_body, "user_id": users[1], "messages": [{"role": "user", "content": "Bob lives in Paris"}]}
             assert (await aml.post("/ext/aml/add", json=bob)).status_code == 200
+            # Different bodies racing for one request identity must not both
+            # succeed: the durable parent-key winner owns its fingerprint.
+            racing_alice = {**alice_body, "user_id": users[2]}
+            racing_bob = {**bob, "user_id": users[2]}
+            left, right = await asyncio.gather(
+                aml.post("/ext/aml/add", json=racing_alice), aml.post("/ext/aml/add", json=racing_bob)
+            )
+            assert sorted([left.status_code, right.status_code]) == [200, 409]
             for bank in banks:
                 await wait_until_settled(native, bank)
+            race_operations = await native.operations.list_operations(banks[2], limit=100)
+            assert sum(op.task_type == "batch_retain" for op in race_operations.operations) == 1
             native_recall = await native.arecall(banks[0], "Alice", max_tokens=8192, budget="high")
             expected_contents = [item.text for item in native_recall.results]
             assert set(expected_contents) == {
