@@ -36,8 +36,8 @@ jobs:
           enable-cache: true
       - name: Install the slim server and deterministic test dependencies
         run: |
-          uv sync --frozen --package hindsight-api-slim --extra test --extra embedded-db
-          uv pip install --python .venv/bin/python --no-deps -e hindsight-clients/python -e hindsight-system-tests
+          uv sync --frozen --package hindsight-api-slim --package hindsight-client --extra test --extra embedded-db
+          uv pip install --python .venv/bin/python --no-deps -e hindsight-system-tests
       - name: Validate AML contract and native task replay
         run: .venv/bin/pytest -o addopts='' hindsight-api-slim/tests/test_aml_http_extension.py -q
       - name: Verify API, worker, PostgreSQL and restart through public APIs
